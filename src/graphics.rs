@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use glam::Vec2;
 use std::sync::Arc;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -11,8 +12,8 @@ use wgpu::{
 use winit::{dpi::PhysicalSize, event::Event, window::Window};
 
 use crate::{
-    camera::Camera,
-    vertex::{Vec2, Vertex},
+    camera::{Camera, CameraController},
+    vertex::{Vertex},
 };
 pub struct Graphics {
     device: Device,
@@ -73,7 +74,7 @@ impl Graphics {
         });
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0.0f32, 0.0, 0.0, 0.0]),
+            contents: bytemuck::cast_slice(&[0.0; 16]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -133,11 +134,11 @@ impl Graphics {
         Vec2::new(self.size.width as f32, self.size.height as f32)
     }
 
-    pub fn update(&mut self, uniforms: Camera) {
+    pub fn update(&mut self, uniforms: &CameraController) {
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[uniforms.offset.x, uniforms.offset.y, uniforms.zoom]),
+            bytemuck::cast_slice(&[uniforms.matrix()]),
         );
     }
 

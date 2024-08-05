@@ -1,9 +1,9 @@
 use std::{io::Write, path::Path};
 
 use anyhow::Result;
+use glam::Vec2;
 use graphics::Graphics;
 use osm::load_points;
-use vertex::Vec2;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
             } if window_id == graphics.window().id() => match event {
                 WindowEvent::CloseRequested => control_flow.exit(),
                 WindowEvent::RedrawRequested => {
-                    graphics.update(c_controller.camera);
+                    graphics.update(&c_controller);
                     graphics.render();
                 }
                 WindowEvent::Resized(new_size) => {

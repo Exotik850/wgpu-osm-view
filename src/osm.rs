@@ -1,9 +1,9 @@
-use crate::vertex::{Vec2, Vertex};
+use crate::vertex::Vertex;
+use glam::Vec2;
 use osmpbf::Element;
 use std::{io::BufReader, path::Path};
 
 use anyhow::Result;
-use cgmath::Vector4;
 struct OSM {
     nodes: Vec<Vec2>,
     min: Vec2,
@@ -96,8 +96,9 @@ pub fn load_points() -> Vec<Vertex> {
     for node in osm.nodes {
         let pos = Vec2::new((node.x - center.x) / size.x, (node.y - center.y) / size.y);
         points.push(Vertex {
+            // _padding:
             pos,
-            color: Vector4::new(pos.x, pos.y, 1.0, 1.0).into(),
+            // color: Vector4::new(pos.x, pos.y, 1.0, 1.0).into(),
         });
     }
     // for way in osm.ways {

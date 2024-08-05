@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.86"
 bytemuck = { version = "1.16.3", features = ["derive"] }
-cgmath = "0.18.0"
+glam = { version = "0.28.0", features = ["bytemuck"] }
 osmpbf = "0.3.4"
 paste = "1.0.15"
 pollster = "0.3.0"

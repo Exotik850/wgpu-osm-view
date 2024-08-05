@@ -1,4 +1,4 @@
-use crate::vertex::Vec2;
+use glam::{Mat4, Vec2, Vec3};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -53,22 +53,31 @@ impl CameraController {
     }
 
     pub fn scroll(&mut self, amount: f32) {
-        let zoom_factor = 1.0 + amount * 0.1; // Adjust 0.1 to control zoom speed
-        let old_zoom = self.camera.zoom;
-        let new_zoom = self.camera.zoom * zoom_factor;
-
-        // Calculate the scale change
-        let scale_change = new_zoom - old_zoom;
-
-        // Adjust the offset based on the zoom point (mouse position)
-        self.camera.offset.x -= self.mouse_pos.x * scale_change;
-        self.camera.offset.y -= self.mouse_pos.y * scale_change;
-
-        // Update the zoom
-        self.camera.zoom = new_zoom;
+        let mat = self.matrix();
+        let inv_mat = mat.inverse();
+        let mouse_pos =
+            inv_mat.transform_point3(Vec3::new(self.mouse_pos.x, self.mouse_pos.y, 0.0));
+        let zoom = self.camera.zoom * (1.0 + amount * 0.1);
+        self.camera.zoom = zoom;
+        let new_mat = self.matrix();
+        let new_mouse_pos = new_mat.transform_point3(Vec3::new(mouse_pos.x, mouse_pos.y, 0.0));
+        self.camera.offset.x += self.mouse_pos.x - new_mouse_pos.x;
+        self.camera.offset.y += self.mouse_pos.y - new_mouse_pos.y;
     }
 
     pub fn resize(&mut self, size: Vec2) {
         self.screen_size = size;
+    }
+
+    pub fn matrix(&self) -> Mat4 {
+        // Translation to move the camera offset to the center
+        let translation =
+            Mat4::from_translation(Vec3::new(self.camera.offset.x, self.camera.offset.y, 0.0));
+
+        // Scaling for zoom
+        let scaling = Mat4::from_scale(Vec3::new(self.camera.zoom, self.camera.zoom, 1.0));
+
+        // Combine scaling and translation to create the final transformation matrix
+        translation * scaling
     }
 }
