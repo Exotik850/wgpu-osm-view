@@ -19,14 +19,28 @@ fn main() -> Result<()> {
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new().with_title(" ").build(&event_loop)?;
 
-    let vertex_data = load_points();
-    if !Path::new("./data.bin").exists() {
-        let mut file = std::fs::File::create("./data.bin")?;
-        file.write(bytemuck::cast_slice(&vertex_data))?;
-    }
-    println!("Loaded {} points", vertex_data.len());
+    // let osm = osm::OSM::load("./map.osm")?;
+    // let vertex_data = if Path::new("./data.bin").exists() {
+    //     let data = std::fs::read("./data.bin").unwrap();
+    //     if let Ok(data) = bytemuck::try_cast_slice(&data) {
+    //         data
+    //     }
+    // } else {
+    //     let points = osm.vertices();
+    // };
+    // if !Path::new("./data.bin").exists() {
+    //     let mut file = std::fs::File::create("./data.bin")?;
+    //     file.write(bytemuck::cast_slice(&vertex_data))?;
+    // }
+    let osm = osm::OSM::load("./tennessee-latest.osm.pbf")?;
+    let vertices = osm.vertices();
+    let indices = osm.indices();
+    // let (first_break, _) = indices.iter().enumerate().filter(|(i, &x)| x == std::u32::MAX).nth(5).unwrap();
 
-    let mut graphics = pollster::block_on(Graphics::new(window, vertex_data))?;
+    println!("Loaded {} points", vertices.len());
+    // println!("First {first_break} indices: {:?}", &indices[..first_break]);
+
+    let mut graphics = pollster::block_on(Graphics::new(window, vertices, &indices))?;
 
     let mut c_controller = camera::CameraController::new(graphics.size_vec());
     event_loop.run(move |event, control_flow| {

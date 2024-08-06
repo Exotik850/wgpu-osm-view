@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use glam::Vec2;
+use core::num;
 use std::sync::Arc;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -24,6 +25,8 @@ pub struct Graphics {
     window: Arc<Window>,
     vertex_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: usize,
     uniform_bind_group: wgpu::BindGroup,
     pub vertex_data: Vec<Vertex>,
     render_pipeline: RenderPipeline,
@@ -32,7 +35,7 @@ pub struct Graphics {
 // TODO: Make this runtime
 
 impl Graphics {
-    pub async fn new(window: Window, vertex_data: Vec<Vertex>) -> Result<Self> {
+    pub async fn new(window: Window, vertex_data: Vec<Vertex>, indices: &[u32]) -> Result<Self> {
         let window = Arc::new(window);
 
         let instance = Instance::new(InstanceDescriptor {
@@ -72,6 +75,14 @@ impl Graphics {
             contents: bytemuck::cast_slice(&vertex_data),
             usage: wgpu::BufferUsages::VERTEX,
         });
+
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let num_indices = indices.len();
+
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&[0.0; 16]),
@@ -117,6 +128,8 @@ impl Graphics {
             config,
             vertex_buffer,
             uniform_buffer,
+            index_buffer,
+            num_indices,
             uniform_bind_group,
             size,
         })
@@ -165,8 +178,10 @@ impl Graphics {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            render_pass.draw(0..self.vertex_data.len() as u32, 0..1);
+            // render_pass.draw(0..self.vertex_data.len() as u32, 0..1);
+            render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
         output.present();
@@ -244,8 +259,8 @@ fn make_pipeline(
         vertex,
         fragment: Some(fragment),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::PointList,
-            strip_index_format: None,
+            topology: wgpu::PrimitiveTopology::LineStrip,
+            strip_index_format: Some(wgpu::IndexFormat::Uint32),
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: Some(wgpu::Face::Back),
             polygon_mode: wgpu::PolygonMode::Fill,
