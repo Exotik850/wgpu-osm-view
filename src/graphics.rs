@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
+use bytemuck::Zeroable;
 use glam::Vec2;
-use core::num;
 use std::sync::Arc;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -14,7 +14,7 @@ use winit::{dpi::PhysicalSize, event::Event, window::Window};
 
 use crate::{
     camera::{Camera, CameraController},
-    vertex::{Vertex},
+    vertex::Vertex,
 };
 pub struct Graphics {
     device: Device,
@@ -26,7 +26,7 @@ pub struct Graphics {
     vertex_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    num_indices: usize,
+    num_indices: u32,
     uniform_bind_group: wgpu::BindGroup,
     pub vertex_data: Vec<Vertex>,
     render_pipeline: RenderPipeline,
@@ -81,11 +81,11 @@ impl Graphics {
             contents: bytemuck::cast_slice(indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = indices.len();
+        let num_indices = indices.len() as u32;
 
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0.0; 16]),
+            contents: bytemuck::cast_slice(&[Camera::zeroed().matrix()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -181,7 +181,7 @@ impl Graphics {
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             // render_pass.draw(0..self.vertex_data.len() as u32, 0..1);
-            render_pass.draw_indexed(0..self.num_indices as u32, 0, 0..1);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
         output.present();
@@ -214,7 +214,7 @@ fn find_config(
         .iter()
         .find(|f| f.is_srgb())
         .unwrap_or(&surface_config.formats[0]);
-    
+
     SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: *format,
@@ -252,7 +252,7 @@ fn make_pipeline(
         })],
         compilation_options: wgpu::PipelineCompilationOptions::default(),
     };
-    
+
     device.create_render_pipeline(&RenderPipelineDescriptor {
         label: None,
         layout: Some(layout),

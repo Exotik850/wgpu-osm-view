@@ -14,6 +14,17 @@ impl Camera {
             zoom: 1.0,
         }
     }
+
+    pub fn matrix(&self) -> Mat4 {
+        // Translation to move the camera offset to the center
+        let translation = Mat4::from_translation(Vec3::new(self.offset.x, self.offset.y, 0.0));
+
+        // Scaling for zoom
+        let scaling = Mat4::from_scale(Vec3::new(self.zoom, self.zoom, 1.0));
+
+        // Combine scaling and translation to create the final transformation matrix
+        translation * scaling
+    }
 }
 
 pub struct CameraController {
@@ -70,14 +81,6 @@ impl CameraController {
     }
 
     pub fn matrix(&self) -> Mat4 {
-        // Translation to move the camera offset to the center
-        let translation =
-            Mat4::from_translation(Vec3::new(self.camera.offset.x, self.camera.offset.y, 0.0));
-
-        // Scaling for zoom
-        let scaling = Mat4::from_scale(Vec3::new(self.camera.zoom, self.camera.zoom, 1.0));
-
-        // Combine scaling and translation to create the final transformation matrix
-        translation * scaling
+        self.camera.matrix()
     }
 }

@@ -1,9 +1,7 @@
-use std::{io::Write, path::Path};
 
 use anyhow::Result;
 use glam::Vec2;
 use graphics::Graphics;
-use osm::load_points;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -19,26 +17,20 @@ fn main() -> Result<()> {
     let event_loop = EventLoop::new()?;
     let window = WindowBuilder::new().with_title(" ").build(&event_loop)?;
 
-    // let osm = osm::OSM::load("./map.osm")?;
-    // let vertex_data = if Path::new("./data.bin").exists() {
-    //     let data = std::fs::read("./data.bin").unwrap();
-    //     if let Ok(data) = bytemuck::try_cast_slice(&data) {
-    //         data
-    //     }
-    // } else {
-    //     let points = osm.vertices();
-    // };
-    // if !Path::new("./data.bin").exists() {
-    //     let mut file = std::fs::File::create("./data.bin")?;
-    //     file.write(bytemuck::cast_slice(&vertex_data))?;
-    // }
     let osm = osm::OSM::load("./tennessee-latest.osm.pbf")?;
     let vertices = osm.vertices();
     let indices = osm.indices();
-    // let (first_break, _) = indices.iter().enumerate().filter(|(i, &x)| x == std::u32::MAX).nth(5).unwrap();
+
+    // let vertices = vec![
+    //     Vertex::new(Vec2::new(0.0, 0.0)),
+    //     Vertex::new(Vec2::new(1.0, 0.0)),
+    //     Vertex::new(Vec2::new(1.0, 1.0)),
+    // ];
+    // let indices = vec![0, 1, u32::MAX, 2, 0];
 
     println!("Loaded {} points", vertices.len());
-    // println!("First {first_break} indices: {:?}", &indices[..first_break]);
+    let stops = indices.iter().filter(|i| **i == std::u32::MAX).count();
+    println!("Loaded {} lines", stops);
 
     let mut graphics = pollster::block_on(Graphics::new(window, vertices, &indices))?;
 

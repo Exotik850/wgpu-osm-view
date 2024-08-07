@@ -4,6 +4,7 @@ use osmpbf::Element;
 use std::{io::BufReader, path::Path};
 
 use anyhow::Result;
+
 pub struct OSM {
     nodes: Vec<Vec2>,
     min: Vec2,
@@ -21,18 +22,20 @@ impl OSM {
         let mut ways = Vec::new();
         let mut min = Vec2::new(f32::MAX, f32::MAX);
         let mut max = Vec2::new(f32::MIN, f32::MIN);
+        let mut small = 0;
         file.for_each(|ele| match ele {
             Element::Node(node) => {
-                temp_map.insert(node.id(), nodes.len() + 1);
+                // temp_map.insert(node.id(), nodes.len());
+                temp_map.insert(node.id(), nodes.len());
                 let node = Vec2::new(node.lon() as f32, node.lat() as f32);
+                nodes.push(node);
                 min.x = min.x.min(node.x);
                 min.y = min.y.min(node.y);
                 max.x = max.x.max(node.x);
                 max.y = max.y.max(node.y);
-                nodes.push(node);
             }
             Element::DenseNode(node) => {
-                temp_map.insert(node.id(), nodes.len() + 1);
+                temp_map.insert(node.id(), nodes.len());
                 let node = Vec2::new(node.lon() as f32, node.lat() as f32);
                 min.x = min.x.min(node.x);
                 min.y = min.y.min(node.y);
@@ -41,19 +44,28 @@ impl OSM {
                 nodes.push(node);
             }
             Element::Way(way) => {
-                let ids = way.raw_refs();
-                ways.push(ids.to_vec());
+                let ids = way.refs();
+                if ids.len() <= 2 {
+                    small += 1;
+                    // eprintln!("Way with less than 2 nodes");
+                    return;
+                }
+                ways.push(ids.collect());
             }
             _ => {}
         })?;
+        eprintln!("Small ways: {}", small);
 
         // Go through the ways and replace the ids with the indices
-        let ways = ways.into_iter().map(|way| {
-            way.into_iter()
-                .filter_map(|id| temp_map.get(&id).copied())
-                .map(|x| x as u32)
-                .collect::<Vec<u32>>()
-        }).collect();
+        let ways = ways
+            .into_iter()
+            .map(|way: Vec<_>| {
+                way.into_iter()
+                    .filter_map(|id| temp_map.get(&id).copied())
+                    .map(|x| x as u32)
+                    .collect::<Vec<u32>>()
+            })
+            .collect();
 
         Ok(OSM {
             nodes,
