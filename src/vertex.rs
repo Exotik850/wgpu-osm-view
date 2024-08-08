@@ -1,7 +1,8 @@
 use glam::{Vec2};
+use serde::{Deserialize, Serialize};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize)]
 pub struct Vertex {
     pub pos: Vec2,
 }

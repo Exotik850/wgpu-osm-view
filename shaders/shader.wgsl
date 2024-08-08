@@ -10,6 +10,7 @@ var<uniform> uniforms: Uniforms;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 @vertex
@@ -18,16 +19,21 @@ fn vs_main(
     in: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_position = uniforms.transform * vec4<f32>(in.position, 0.0, 1.0);
-    // out.color = in.color;
+    var pos = uniforms.transform * vec4<f32>(in.position.x, in.position.y, 0.0, 1.0);
+    out.clip_position = pos;
+    // Color based on distance from the center
+    var d = length(in.position);
+    out.color = vec4<f32>(d, 1.0 - d, 0.0, 1.0);
+
     return out;
 }
 
 @fragment
 fn fs_main(
-    @builtin(position) in_position: vec4<f32>
+    // @builtin(position) in_position: vec4<f32>,
+    in: VertexOutput
 ) -> @location(0) vec4<f32> {
-    return vec4<f32>(in_position.xy, 0.0, 1.0);
+    return in.color;
 }
  
 

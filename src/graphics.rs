@@ -6,7 +6,7 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
     BindGroupDescriptor, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Device, DeviceDescriptor,
     Features, FragmentState, Instance, InstanceDescriptor, Limits, PipelineLayout,
-    PipelineLayoutDescriptor, Queue, RenderPipeline, RenderPipelineDescriptor,
+    PipelineLayoutDescriptor, PrimitiveTopology, Queue, RenderPipeline, RenderPipelineDescriptor,
     RequestAdapterOptions, ShaderModuleDescriptor, Surface, SurfaceConfiguration,
     TextureViewDescriptor,
 };
@@ -16,6 +16,16 @@ use crate::{
     camera::{Camera, CameraController},
     vertex::Vertex,
 };
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Uniforms {
+    // _padding: [u8; 8],
+    // aspect: f32,
+    transform: glam::Mat4,
+    color: glam::Vec4,
+}
+
 pub struct Graphics {
     device: Device,
     queue: Queue,
@@ -28,14 +38,14 @@ pub struct Graphics {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     uniform_bind_group: wgpu::BindGroup,
-    pub vertex_data: Vec<Vertex>,
-    render_pipeline: RenderPipeline,
+    line_pipeline: RenderPipeline,
+    point_pipeline: RenderPipeline,
+    point_buffer: wgpu::Buffer,
+    point_count: u32,
 }
 
-// TODO: Make this runtime
-
 impl Graphics {
-    pub async fn new(window: Window, vertex_data: Vec<Vertex>, indices: &[u32]) -> Result<Self> {
+    pub async fn new(window: Window, vertex_data: &[Vertex], indices: &[u32]) -> Result<Self> {
         let window = Arc::new(window);
 
         let instance = Instance::new(InstanceDescriptor {
@@ -81,6 +91,15 @@ impl Graphics {
             contents: bytemuck::cast_slice(indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+
+        let max_highlighted = vertex_data.len() as u64;
+        let point_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: max_highlighted,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let num_indices = indices.len() as u32;
 
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -110,21 +129,25 @@ impl Graphics {
             }],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        let line_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = make_pipeline(&device, &config, &pipeline_layout);
+        let line_pipeline =
+            make_pipeline(&device, &config, &line_layout, PrimitiveTopology::LineStrip);
+        let point_pipeline =
+            make_pipeline(&device, &config, &line_layout, PrimitiveTopology::PointList);
 
         Ok(Self {
             device,
             queue,
             surface,
             window,
-            vertex_data,
-            render_pipeline,
+            line_pipeline,
+            point_pipeline,
+            point_buffer,
             config,
             vertex_buffer,
             uniform_buffer,
@@ -132,6 +155,7 @@ impl Graphics {
             num_indices,
             uniform_bind_group,
             size,
+            point_count: 0,
         })
     }
 
@@ -147,12 +171,25 @@ impl Graphics {
         Vec2::new(self.size.width as f32, self.size.height as f32)
     }
 
-    pub fn update(&mut self, uniforms: &CameraController) {
+    pub fn update(&mut self, uniforms: &CameraController, vertices: &[Vertex]) {
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::cast_slice(&[uniforms.matrix()]),
         );
+        let v_bytes = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
+        if v_bytes > self.point_buffer.size() {
+            println!("Resizing point buffer");
+            self.point_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: v_bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        self.queue
+            .write_buffer(&self.point_buffer, 0, bytemuck::cast_slice(vertices));
+        self.point_count = vertices.len() as u32;
     }
 
     pub fn render(&self) {
@@ -176,12 +213,16 @@ impl Graphics {
                 })],
                 ..Default::default()
             });
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.line_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            // render_pass.draw(0..self.vertex_data.len() as u32, 0..1);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+
+            // render_pass.set_pipeline(&self.point_pipeline);
+            // render_pass.set_vertex_buffer(0, self.point_buffer.slice(..));
+            // render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            // render_pass.draw(0..self.point_count, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
         output.present();
@@ -231,6 +272,7 @@ fn make_pipeline(
     device: &Device,
     config: &SurfaceConfiguration,
     layout: &PipelineLayout,
+    topology: PrimitiveTopology,
 ) -> RenderPipeline {
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: None,
@@ -259,8 +301,12 @@ fn make_pipeline(
         vertex,
         fragment: Some(fragment),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::LineStrip,
-            strip_index_format: Some(wgpu::IndexFormat::Uint32),
+            topology,
+            strip_index_format: if topology == wgpu::PrimitiveTopology::LineStrip {
+                Some(wgpu::IndexFormat::Uint32)
+            } else {
+                None
+            },
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: Some(wgpu::Face::Back),
             polygon_mode: wgpu::PolygonMode::Fill,

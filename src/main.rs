@@ -1,7 +1,10 @@
+use std::{collections::HashMap, os::raw, path::Path};
 
 use anyhow::Result;
-use glam::Vec2;
+use compression::prelude::*;
+use glam::{Vec2, Vec3, Vec4};
 use graphics::Graphics;
+use vertex::Vertex;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -13,13 +16,106 @@ mod osm;
 mod shaders;
 mod vertex;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Serialize)]
+pub struct RawRenderData {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+}
+
+impl RawRenderData {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+        Self { vertices, indices }
+    }
+
+    pub fn from_osm(osm: &osm::OSM) -> Self {
+        let vertices = osm.vertices();
+        let indices = osm.indices();
+        Self::new(vertices, indices)
+    }
+
+    pub fn load_or_cache(cache_path: &str, osm_path: &str) -> Result<Self> {
+        let cache_path = Path::new(cache_path);
+        if !cache_path.exists() {
+            let osm = osm::OSM::load(osm_path)?;
+            let raw_render_data = RawRenderData::from_osm(&osm);
+            // std::fs::write(cache_path, bincode::serialize(&raw_render_data)?)?;
+            Ok(raw_render_data)
+        } else {
+            let bytes = std::fs::read(cache_path)?;
+            let bytes: Vec<_> = bytes
+                .into_iter()
+                .decode(&mut ZlibDecoder::new())
+                .collect::<Result<_, _>>()?;
+            Ok(bincode::deserialize(&bytes)?)
+        }
+    }
+
+    pub fn cache_to(&self, cache_path: &str) -> Result<()> {
+        if !Path::new(cache_path).exists() {
+            let bytes = bincode::serialize(&self)?;
+            let bytes: Vec<_> = bytes
+                .into_iter()
+                .encode(&mut ZlibEncoder::new(), Action::Finish)
+                .collect::<Result<_, _>>()?;
+            std::fs::write(cache_path, bytes)?;
+        }
+        Ok(())
+    }
+
+    pub fn sorted(&self, cell_size: f32) -> SortedRenderData {
+        let mut map = HashMap::new();
+        for (i, vertex) in self.vertices.iter().enumerate() {
+            let x = (vertex.pos.x / cell_size).floor() as i32;
+            let y = (vertex.pos.y / cell_size).floor() as i32;
+            map.entry((x, y)).or_insert_with(Vec::new).push(i);
+        }
+
+        SortedRenderData {
+            raw_ref: self,
+            cell_size,
+            map,
+        }
+    }
+}
+
+pub struct SortedRenderData<'a> {
+    raw_ref: &'a RawRenderData,
+    cell_size: f32,
+    map: HashMap<(i32, i32), Vec<usize>>,
+}
+
+impl<'a> SortedRenderData<'a> {
+    pub fn get(&self, x: f32, y: f32) -> Option<&[usize]> {
+        self.map.get(&self.convert(x, y)).map(|v| v.as_slice())
+    }
+
+    pub fn get_vec(&self, pos: Vec2) -> Option<&[usize]> {
+        self.map
+            .get(&self.convert(pos.x, pos.y))
+            .map(|v| v.as_slice())
+    }
+
+    pub fn convert(&self, x: f32, y: f32) -> (i32, i32) {
+        (
+            (x / self.cell_size).floor() as i32,
+            (y / self.cell_size).floor() as i32,
+        )
+    }
+}
+
 fn main() -> Result<()> {
     let event_loop = EventLoop::new()?;
-    let window = WindowBuilder::new().with_title(" ").build(&event_loop)?;
+    let window = WindowBuilder::new()
+        .with_title("WGPU OSM View")
+        .build(&event_loop)?;
 
-    let osm = osm::OSM::load("./tennessee-latest.osm.pbf")?;
-    let vertices = osm.vertices();
-    let indices = osm.indices();
+    let raw_render_data =
+        RawRenderData::load_or_cache("./cache.bin", "./tennessee-latest.osm.pbf")?;
+
+    let vertices = raw_render_data.vertices.clone();
+    let sorted = raw_render_data.sorted(0.1);
 
     // let vertices = vec![
     //     Vertex::new(Vec2::new(0.0, 0.0)),
@@ -28,12 +124,17 @@ fn main() -> Result<()> {
     // ];
     // let indices = vec![0, 1, u32::MAX, 2, 0];
 
-    println!("Loaded {} points", vertices.len());
-    let stops = indices.iter().filter(|i| **i == std::u32::MAX).count();
-    println!("Loaded {} lines", stops);
+    // println!("Loaded {} points", vertices.len());
+    // let stops = indices.iter().filter(|i| **i == std::u32::MAX).count();
+    // println!("Loaded {} lines", stops);
 
-    let mut graphics = pollster::block_on(Graphics::new(window, vertices, &indices))?;
-
+    let mut graphics = pollster::block_on(Graphics::new(
+        window,
+        &raw_render_data.vertices,
+        &raw_render_data.indices,
+    ))?;
+    let mut current_points = Vec::new();
+    let mut world_pos = Vec2::new(0.0, 0.0);
     let mut c_controller = camera::CameraController::new(graphics.size_vec());
     event_loop.run(move |event, control_flow| {
         if graphics.input(&event) {
@@ -46,7 +147,14 @@ fn main() -> Result<()> {
             } if window_id == graphics.window().id() => match event {
                 WindowEvent::CloseRequested => control_flow.exit(),
                 WindowEvent::RedrawRequested => {
-                    graphics.update(&c_controller);
+                    c_controller.apply_velocity();
+                    graphics.update(&c_controller, &current_points);
+                    // if let Some(points) = sorted.get_vec(world_pos) {
+                    //     // println!("Found {} points", points.len());
+                    //     current_points = points.iter().map(|i| vertices[*i]).collect();
+                    // } else {
+                    //     // println!("No points found in this cell");
+                    // }
                     graphics.render();
                 }
                 WindowEvent::Resized(new_size) => {
@@ -54,10 +162,10 @@ fn main() -> Result<()> {
                     c_controller.resize(graphics.size_vec());
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    c_controller.update(
-                        Vec2::new(position.x as f32, position.y as f32),
-                        graphics.size_vec(),
-                    );
+                    let size = graphics.size_vec();
+                    let screen_pos = Vec2::new(position.x as f32, position.y as f32);
+                    c_controller.update(screen_pos, size);
+                    world_pos = c_controller.screen_to_world(screen_pos);
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     c_controller.mouse_down(
@@ -87,6 +195,8 @@ fn main() -> Result<()> {
             _ => (),
         }
     })?;
+
+    raw_render_data.cache_to("./cache.bin")?;
 
     Ok(())
 }

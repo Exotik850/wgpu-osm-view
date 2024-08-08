@@ -25,22 +25,17 @@ impl OSM {
         let mut small = 0;
         file.for_each(|ele| match ele {
             Element::Node(node) => {
-                // temp_map.insert(node.id(), nodes.len());
                 temp_map.insert(node.id(), nodes.len());
                 let node = Vec2::new(node.lon() as f32, node.lat() as f32);
                 nodes.push(node);
-                min.x = min.x.min(node.x);
-                min.y = min.y.min(node.y);
-                max.x = max.x.max(node.x);
-                max.y = max.y.max(node.y);
+                min = min.min(node);
+                max = max.max(node);
             }
             Element::DenseNode(node) => {
                 temp_map.insert(node.id(), nodes.len());
                 let node = Vec2::new(node.lon() as f32, node.lat() as f32);
-                min.x = min.x.min(node.x);
-                min.y = min.y.min(node.y);
-                max.x = max.x.max(node.x);
-                max.y = max.y.max(node.y);
+                min = min.min(node);
+                max = max.max(node);
                 nodes.push(node);
             }
             Element::Way(way) => {
@@ -61,8 +56,7 @@ impl OSM {
             .into_iter()
             .map(|way: Vec<_>| {
                 way.into_iter()
-                    .filter_map(|id| temp_map.get(&id).copied())
-                    .map(|x| x as u32)
+                    .map(|id| temp_map.get(&id).copied().unwrap() as u32)
                     .collect::<Vec<u32>>()
             })
             .collect();
@@ -75,7 +69,6 @@ impl OSM {
         })
     }
 
-    // Seperates all of the ways with the maxval
     pub fn indices(&self) -> Vec<u32> {
         let mut indices = Vec::new();
         for (i, way) in self.ways.iter().enumerate() {
@@ -117,33 +110,4 @@ impl OSM {
             (self.min.y + self.max.y) / 2.0,
         )
     }
-}
-
-pub fn load_points() -> Vec<Vertex> {
-    let osm = OSM::load("./tennessee-latest.osm.pbf").unwrap();
-    let mut points = Vec::new();
-    let center = osm.center();
-    let size = osm.size();
-    for node in osm.nodes {
-        let pos = Vec2::new((node.x - center.x) / size.x, (node.y - center.y) / size.y);
-        points.push(Vertex {
-            // _padding:
-            pos,
-            // color: Vector4::new(pos.x, pos.y, 1.0, 1.0).into(),
-        });
-    }
-    // for way in osm.ways {
-    //     for node in way {
-    //         let Some(mut pos) = osm.nodes.get(node).copied() else {
-    //             continue;
-    //         };
-    //         pos.x = (pos.x - center.x) / size.x;
-    //         pos.y = (pos.y - center.y) / size.y;
-    //         points.push(Vertex {
-    //             pos,
-    //             color: Vector4::new(1.0, 1.0, 1.0, 1.0).into(),
-    //         });
-    //     }
-    // }
-    points
 }
