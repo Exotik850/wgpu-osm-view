@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use bytemuck::Zeroable;
 use glam::Vec2;
+use smaa::SmaaTarget;
 use std::sync::Arc;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -23,7 +24,9 @@ pub struct Uniforms {
     // _padding: [u8; 8],
     // aspect: f32,
     transform: glam::Mat4,
-    color: glam::Vec4,
+    aspect: f32,
+    _padding: [f32; 7]
+    // color: glam::Vec4,
 }
 
 pub struct Graphics {
@@ -42,6 +45,7 @@ pub struct Graphics {
     point_pipeline: RenderPipeline,
     point_buffer: wgpu::Buffer,
     point_count: u32,
+    smaa_target: SmaaTarget,
 }
 
 impl Graphics {
@@ -104,7 +108,7 @@ impl Graphics {
 
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[Camera::zeroed().matrix()]),
+            contents: bytemuck::cast_slice(&[Uniforms::zeroed()]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -140,6 +144,15 @@ impl Graphics {
         let point_pipeline =
             make_pipeline(&device, &config, &line_layout, PrimitiveTopology::PointList);
 
+        let smaa_target = SmaaTarget::new(
+            &device,
+            &queue,
+            size.width,
+            size.height,
+            config.format,
+            smaa::SmaaMode::Smaa1X,
+        );
+
         Ok(Self {
             device,
             queue,
@@ -156,6 +169,7 @@ impl Graphics {
             uniform_bind_group,
             size,
             point_count: 0,
+            smaa_target,
         })
     }
 
@@ -175,7 +189,11 @@ impl Graphics {
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[uniforms.matrix()]),
+            bytemuck::cast_slice(&[Uniforms {
+                transform: uniforms.camera.matrix(),
+                aspect: self.size.width as f32 / self.size.height as f32,
+                _padding: [0.0; 7],
+            }]),
         );
         let v_bytes = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
         if v_bytes > self.point_buffer.size() {
@@ -192,11 +210,17 @@ impl Graphics {
         self.point_count = vertices.len() as u32;
     }
 
-    pub fn render(&self) {
-        let output = self.surface.get_current_texture().unwrap();
+    pub fn render(&mut self) {
+        let Ok(output) = self.surface.get_current_texture() else {
+            self.surface.configure(&self.device, &self.config);
+            return;
+        };
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());
+        let smaa_frame = self
+            .smaa_target
+            .start_frame(&self.device, &self.queue, &view);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -204,7 +228,7 @@ impl Graphics {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &smaa_frame,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -225,6 +249,7 @@ impl Graphics {
             // render_pass.draw(0..self.point_count, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
+        smaa_frame.resolve();
         output.present();
     }
 
@@ -240,6 +265,8 @@ impl Graphics {
         self.size = size;
         self.config.width = size.width;
         self.config.height = size.height;
+        self.smaa_target
+            .resize(&self.device, size.width, size.height);
         self.surface.configure(&self.device, &self.config);
     }
 }

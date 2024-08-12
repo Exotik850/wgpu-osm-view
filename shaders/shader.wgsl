@@ -4,6 +4,7 @@ struct VertexInput {
 
 struct Uniforms {
   transform: mat4x4<f32>,
+  aspect: f32,
 }
 @group(0) @binding(0) 
 var<uniform> uniforms: Uniforms;
@@ -19,10 +20,10 @@ fn vs_main(
     in: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
-    var pos = uniforms.transform * vec4<f32>(in.position.x, in.position.y, 0.0, 1.0);
+    var pos = uniforms.transform * vec4<f32>(in.position.x, in.position.y * uniforms.aspect, 0.0, 1.0);
     out.clip_position = pos;
     // Color based on distance from the center
-    var d = length(in.position);
+    var d = length(pos);
     out.color = vec4<f32>(d, 1.0 - d, 0.0, 1.0);
 
     return out;

@@ -35,23 +35,6 @@ impl RawRenderData {
         Self::new(vertices, indices)
     }
 
-    pub fn load_or_cache(cache_path: &str, osm_path: &str) -> Result<Self> {
-        let cache_path = Path::new(cache_path);
-        if !cache_path.exists() {
-            let osm = osm::OSM::load(osm_path)?;
-            let raw_render_data = RawRenderData::from_osm(&osm);
-            // std::fs::write(cache_path, bincode::serialize(&raw_render_data)?)?;
-            Ok(raw_render_data)
-        } else {
-            let bytes = std::fs::read(cache_path)?;
-            let bytes: Vec<_> = bytes
-                .into_iter()
-                .decode(&mut ZlibDecoder::new())
-                .collect::<Result<_, _>>()?;
-            Ok(bincode::deserialize(&bytes)?)
-        }
-    }
-
     pub fn cache_to(&self, cache_path: &str) -> Result<()> {
         if !Path::new(cache_path).exists() {
             let bytes = bincode::serialize(&self)?;
@@ -111,11 +94,28 @@ fn main() -> Result<()> {
         .with_title("WGPU OSM View")
         .build(&event_loop)?;
 
-    let raw_render_data =
-        RawRenderData::load_or_cache("./cache.bin", "./tennessee-latest.osm.pbf")?;
+    let cache_path = Path::new("./cache.bin");
+    let raw_render_data = if !cache_path.exists() {
+        let osm = osm::OSM::load("./tennessee-latest.osm.pbf")?;
 
-    let vertices = raw_render_data.vertices.clone();
-    let sorted = raw_render_data.sorted(0.1);
+        let osm_graph = osm::OSMGraph::from_osm(&osm);
+        println!("Loaded {:?}", osm_graph.plan_path_a_star(0, 20));
+        return Ok(());
+
+        let raw_render_data = RawRenderData::from_osm(&osm);
+        // std::fs::write(cache_path, bincode::serialize(&raw_render_data)?)?;
+        raw_render_data
+    } else {
+        let bytes = std::fs::read(cache_path)?;
+        let bytes: Vec<_> = bytes
+            .into_iter()
+            .decode(&mut ZlibDecoder::new())
+            .collect::<Result<_, _>>()?;
+        bincode::deserialize(&bytes)?
+    };
+
+    // let vertices = raw_render_data.vertices.clone();
+    // let sorted = raw_render_data.sorted(0.1);
 
     // let vertices = vec![
     //     Vertex::new(Vec2::new(0.0, 0.0)),
