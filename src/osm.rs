@@ -1,6 +1,7 @@
 use crate::vertex::Vertex;
 use glam::{DVec2, Vec2};
 use osmpbf::Element;
+use radix_trie::Trie;
 use std::{collections::HashMap, io::BufReader, path::Path};
 
 use anyhow::Result;
@@ -22,15 +23,15 @@ impl OSMGraph {
         let mut nodes = Vec::new();
         let mut connected = Vec::new();
         let mut buckets = HashMap::new();
-        for &TempNode { pos } in osm.nodes.iter() {
+        for &TempNode { pos, .. } in osm.nodes.iter() {
             let connected_index = connected.len();
             // let id = node.id;
             // node_map.insert(i, id);
-            let bucket = (
-                (pos.x as u32 / 100) * 100,
-                (pos.y as u32 / 100) * 100,
-            );
-            buckets.entry(bucket).or_insert_with(Vec::new).push(nodes.len());
+            let bucket = ((pos.x as u32 / 100) * 100, (pos.y as u32 / 100) * 100);
+            buckets
+                .entry(bucket)
+                .or_insert_with(Vec::new)
+                .push(nodes.len());
             nodes.push(Node {
                 connected_index,
                 pos,
@@ -45,21 +46,28 @@ impl OSMGraph {
                 connected[b].push(a);
             }
         }
-        Self { nodes, connected, buckets }
+        Self {
+            nodes,
+            connected,
+            buckets,
+        }
     }
 
     fn closest_node(&self, pos: DVec2) -> Option<usize> {
-        self.nodes
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, node)| {
-                let diff = node.pos - pos;
-                let diff = diff.dot(diff);
-                (diff * 1_000_000.0) as i64
-            })
-            .map(|(i, _)| i)
+        let bucket = ((pos.x as u32 / 100) * 100, (pos.y as u32 / 100) * 100);
+        let mut min_distance = f64::INFINITY;
+        let mut closest = None;
+        for &node in self.buckets.get(&bucket).into_iter().flatten() {
+            let distance = self.nodes[node].pos.distance(pos);
+            if distance < min_distance {
+                min_distance = distance;
+                closest = Some(node);
+            }
+        }
+        closest
     }
 
+    // Breadth-first search
     fn plan_path(&self, a: usize, b: usize) -> Option<Vec<usize>> {
         let mut visited = vec![false; self.nodes.len()];
         let mut queue = std::collections::VecDeque::new();
@@ -119,20 +127,21 @@ impl OSMGraph {
                 let next_cost = cost[node] + self.nodes[node].pos.distance(self.nodes[next].pos);
                 if next_cost < cost[next] {
                     cost[next] = next_cost;
-                    heuristic[next] = (next_cost + self.nodes[next].pos.distance(self.nodes[b].pos)) as u64;
+                    heuristic[next] =
+                        (next_cost + self.nodes[next].pos.distance(self.nodes[b].pos)) as u64;
                     prev[next] = node;
-                    queue.push(std::cmp::Reverse((heuristic[next] , next)));
+                    queue.push(std::cmp::Reverse((heuristic[next], next)));
                 }
             }
         }
         None
     }
-
 }
 
 struct TempNode {
     // id: i64,
     pos: DVec2,
+    tags: HashMap<String, String>,
 }
 
 pub struct OSM {
@@ -160,14 +169,26 @@ impl OSM {
                 // nodes.push(node);
                 min = min.min(pos);
                 max = max.max(pos);
-                nodes.push(TempNode { pos });
+                nodes.push(TempNode {
+                    pos,
+                    tags: node
+                        .tags()
+                        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                        .collect(),
+                });
             }
             Element::DenseNode(node) => {
                 temp_map.insert(node.id(), nodes.len());
                 let pos = DVec2::new(node.lon(), node.lat());
                 min = min.min(pos);
                 max = max.max(pos);
-                nodes.push(TempNode { pos });
+                nodes.push(TempNode {
+                    pos,
+                    tags: node
+                        .tags()
+                        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                        .collect(),
+                });
                 // nodes.push(node);
             }
             Element::Way(way) => {
@@ -243,4 +264,14 @@ impl OSM {
             (self.min.y + self.max.y) as f32 / 2.0,
         )
     }
+
+    pub fn trie(&mut self) -> Trie<String, usize> {
+      let mut trie = Trie::new();
+      for (i, node) in self.nodes.iter_mut().enumerate() {
+        if let Some(name) = node.tags.remove("name") {
+          trie.insert(name, i);
+        }
+      }
+      trie
+  }
 }

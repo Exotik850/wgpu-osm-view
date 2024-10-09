@@ -4,6 +4,8 @@ use anyhow::Result;
 use compression::prelude::*;
 use glam::{Vec2, Vec3, Vec4};
 use graphics::Graphics;
+use pollster::FutureExt;
+use radix_trie::Trie;
 use vertex::Vertex;
 use winit::{
     event::{Event, WindowEvent},
@@ -89,19 +91,12 @@ impl<'a> SortedRenderData<'a> {
 }
 
 fn main() -> Result<()> {
-    let event_loop = EventLoop::new()?;
-    let window = WindowBuilder::new()
-        .with_title("WGPU OSM View")
-        .build(&event_loop)?;
-
+    let mut args = std::env::args();
+    args.next();
+    let osm_path = args.next().expect("No OSM file provided");
     let cache_path = Path::new("./cache.bin");
     let raw_render_data = if !cache_path.exists() {
-        let osm = osm::OSM::load("./tennessee-latest.osm.pbf")?;
-
-        let osm_graph = osm::OSMGraph::from_osm(&osm);
-        println!("Loaded {:?}", osm_graph.plan_path_a_star(0, 20));
-        return Ok(());
-
+        let osm = osm::OSM::load(osm_path)?;
         let raw_render_data = RawRenderData::from_osm(&osm);
         // std::fs::write(cache_path, bincode::serialize(&raw_render_data)?)?;
         raw_render_data
@@ -127,14 +122,14 @@ fn main() -> Result<()> {
     // println!("Loaded {} points", vertices.len());
     // let stops = indices.iter().filter(|i| **i == std::u32::MAX).count();
     // println!("Loaded {} lines", stops);
-
-    let mut graphics = pollster::block_on(Graphics::new(
-        window,
-        &raw_render_data.vertices,
-        &raw_render_data.indices,
-    ))?;
-    let mut current_points = Vec::new();
-    let mut world_pos = Vec2::new(0.0, 0.0);
+    let event_loop = EventLoop::new()?;
+    let window = WindowBuilder::new()
+        .with_title("WGPU OSM View")
+        .build(&event_loop)?;
+    let mut graphics =
+        Graphics::new(window, &raw_render_data.vertices, &raw_render_data.indices).block_on()?;
+    // let mut current_points = Vec::new();
+    // let mut world_pos = Vec2::new(0.0, 0.0);
     let mut c_controller = camera::CameraController::new(graphics.size_vec());
     event_loop.run(move |event, control_flow| {
         if graphics.input(&event) {
@@ -148,7 +143,8 @@ fn main() -> Result<()> {
                 WindowEvent::CloseRequested => control_flow.exit(),
                 WindowEvent::RedrawRequested => {
                     c_controller.apply_velocity();
-                    graphics.update(&c_controller, &current_points);
+                    // graphics.update(&c_controller, &current_points);
+                    graphics.update(&c_controller);
                     // if let Some(points) = sorted.get_vec(world_pos) {
                     //     // println!("Found {} points", points.len());
                     //     current_points = points.iter().map(|i| vertices[*i]).collect();
@@ -165,7 +161,8 @@ fn main() -> Result<()> {
                     let size = graphics.size_vec();
                     let screen_pos = Vec2::new(position.x as f32, position.y as f32);
                     c_controller.update(screen_pos, size);
-                    world_pos = c_controller.screen_to_world(screen_pos);
+                    // world_pos = screen_pos / size;
+                    // println!("World pos: {:?}", screen_pos / size);
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     c_controller.mouse_down(

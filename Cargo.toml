@@ -12,6 +12,7 @@ glam = { version = "0.28.0", features = ["bytemuck", "serde"] }
 osmpbf = "0.3.4"
 paste = "1.0.15"
 pollster = "0.3.0"
+radix_trie = "0.2.1"
 serde = { version = "1.0.204", features = ["derive"] }
 smaa = "0.15.0"
 wgpu = "22.1.0"

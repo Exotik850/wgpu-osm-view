@@ -185,7 +185,7 @@ impl Graphics {
         Vec2::new(self.size.width as f32, self.size.height as f32)
     }
 
-    pub fn update(&mut self, uniforms: &CameraController, vertices: &[Vertex]) {
+    pub fn update(&mut self, uniforms: &CameraController) {
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -195,19 +195,19 @@ impl Graphics {
                 _padding: [0.0; 7],
             }]),
         );
-        let v_bytes = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
-        if v_bytes > self.point_buffer.size() {
-            println!("Resizing point buffer");
-            self.point_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: v_bytes,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-        }
-        self.queue
-            .write_buffer(&self.point_buffer, 0, bytemuck::cast_slice(vertices));
-        self.point_count = vertices.len() as u32;
+        // let v_bytes = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
+        // if v_bytes > self.point_buffer.size() {
+        //     println!("Resizing point buffer");
+        //     self.point_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+        //         label: None,
+        //         size: v_bytes,
+        //         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        //         mapped_at_creation: false,
+        //     });
+        // }
+        // self.queue
+        //     .write_buffer(&self.point_buffer, 0, bytemuck::cast_slice(vertices));
+        // self.point_count = vertices.len() as u32;
     }
 
     pub fn render(&mut self) {
