@@ -1,4 +1,8 @@
-use std::{collections::HashMap, os::raw, path::Path};
+use std::{
+    collections::HashMap,
+    os::raw,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 use compression::prelude::*;
@@ -37,8 +41,8 @@ impl RawRenderData {
         Self::new(vertices, indices)
     }
 
-    pub fn cache_to(&self, cache_path: &str) -> Result<()> {
-        if !Path::new(cache_path).exists() {
+    pub fn cache_to(&self, cache_path: impl AsRef<Path>) -> Result<()> {
+        if !cache_path.as_ref().exists() {
             let bytes = bincode::serialize(&self)?;
             let bytes: Vec<_> = bytes
                 .into_iter()
@@ -94,14 +98,15 @@ fn main() -> Result<()> {
     let mut args = std::env::args();
     args.next();
     let osm_path = args.next().expect("No OSM file provided");
-    let cache_path = Path::new("./cache.bin");
+    // let cache_path = Path::new("./cache.bin");
+    let cache_path = PathBuf::from(format!("{}.cache", osm_path));
     let raw_render_data = if !cache_path.exists() {
         let osm = osm::OSM::load(osm_path)?;
         let raw_render_data = RawRenderData::from_osm(&osm);
         // std::fs::write(cache_path, bincode::serialize(&raw_render_data)?)?;
         raw_render_data
     } else {
-        let bytes = std::fs::read(cache_path)?;
+        let bytes = std::fs::read(&cache_path)?;
         let bytes: Vec<_> = bytes
             .into_iter()
             .decode(&mut ZlibDecoder::new())
@@ -193,7 +198,7 @@ fn main() -> Result<()> {
         }
     })?;
 
-    raw_render_data.cache_to("./cache.bin")?;
+    raw_render_data.cache_to(cache_path)?;
 
     Ok(())
 }
