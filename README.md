@@ -6,6 +6,8 @@ A high-performance OpenStreetMap viewer built with WGPU and Rust.
 [![Rust](https://img.shields.io/badge/Rust-1.55+-orange.svg)](https://www.rust-lang.org)
 [![WGPU](https://img.shields.io/badge/WGPU-0.12+-blue.svg)](https://wgpu.rs)
 
+![Preview](.github/preview.png)
+
 ## Table of Contents
 
 - [WGPU OSM View](#wgpu-osm-view)
@@ -83,4 +85,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Support
 
-For questions, bug reports, or feature requests, please open an issue on the [GitHub repository](something)
+For questions, bug reports, or feature requests, please open an issue on the [GitHub repository](https://github.com/Exotik850/wgpu-osm-view)
